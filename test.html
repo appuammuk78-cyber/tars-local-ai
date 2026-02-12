@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>TARS</title>
+<style>
+body {
+    margin: 0;
+    background: #0B0F14;
+    color: #E6F1FF;
+    font-family: 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+header {
+    padding: 20px;
+    font-size: 20px;
+    letter-spacing: 2px;
+    border-bottom: 1px solid #1f2a38;
+    color: #00FFD1;
+}
+
+#chat {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.message {
+    margin-bottom: 15px;
+    line-height: 1.5;
+}
+
+.user {
+    color: #00FFD1;
+}
+
+.ai {
+    color: #E6F1FF;
+}
+
+footer {
+    border-top: 1px solid #1f2a38;
+    padding: 15px;
+    display: flex;
+}
+
+input {
+    flex: 1;
+    background: #111821;
+    border: 1px solid #1f2a38;
+    color: #E6F1FF;
+    padding: 10px;
+    font-size: 14px;
+}
+
+button {
+    background: #00FFD1;
+    border: none;
+    padding: 10px 20px;
+    margin-left: 10px;
+    cursor: pointer;
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<header>TARS // AI CONTROL INTERFACE</header>
+
+<div id="chat"></div>
+
+<footer>
+    <input id="msg" placeholder="Enter command..." />
+    <button onclick="send()">EXECUTE</button>
+</footer>
+
+<script>
+async function send() {
+    const message = document.getElementById("msg").value;
+    if (!message) return;
+
+    const chat = document.getElementById("chat");
+
+    chat.innerHTML += `<div class="message user">> ${message}</div>`;
+    document.getElementById("msg").value = "";
+
+    const res = await fetch("http://127.0.0.1:8000/chat", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            messages: [
+                { role: "user", content: message }
+            ]
+        })
+    });
+
+    const data = await res.json();
+    const reply = data.choices[0].message.content;
+
+    chat.innerHTML += `<div class="message ai">${reply}</div>`;
+    chat.scrollTop = chat.scrollHeight;
+}
+</script>
+
+</body>
+</html>
