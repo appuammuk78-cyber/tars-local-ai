@@ -6,7 +6,7 @@ import json
 
 app = FastAPI()
 
-# Allow browser requests
+# Allow frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,74 +16,88 @@ app.add_middleware(
 
 LM_STUDIO_URL = "http://127.0.0.1:1234/v1/chat/completions"
 
-SYSTEM_PROMPT = """
-You are TARS — a local AI system controller.
 
-If the user wants to perform a system action,
-respond ONLY in pure JSON format like this:
+# ----------------------------
+# SYSTEM COMMAND EXECUTION
+# ----------------------------
 
-{
-  "action": "open_explorer"
-}
+def execute_system_action(user_text: str):
 
-Available actions:
-- open_explorer
-- open_chrome
-- open_vscode
+    text = user_text.lower().strip()
 
-If no system action is requested,
-respond normally in plain text.
+    # OPEN APP
+    if text.startswith("open "):
+        app_name = text.replace("open ", "").strip()
 
-IMPORTANT:
-Do NOT wrap JSON in markdown.
-Do NOT use ```json formatting.
-Return only raw JSON when triggering an action.
-"""
+        try:
+            subprocess.run(
+                ["powershell", "Start-Process", app_name],
+                check=True
+            )
+            return f"Opening {app_name}..."
+        except:
+            return f"Could not find or open '{app_name}'."
+
+    # CLOSE APP
+    if text.startswith("close "):
+        app_name = text.replace("close ", "").strip()
+
+        try:
+            subprocess.run(
+                ["powershell", "Stop-Process", "-Name", app_name, "-Force"],
+                check=True
+            )
+            return f"Closing {app_name}..."
+        except:
+            return f"Could not close '{app_name}'."
+
+    # LIST INSTALLED APPS
+    if "list apps" in text or "installed apps" in text:
+        try:
+            result = subprocess.run(
+                ["powershell", "Get-StartApps"],
+                capture_output=True,
+                text=True
+            )
+            # limit output so browser doesn’t freeze
+            return result.stdout[:3000]
+        except:
+            return "Could not retrieve installed apps."
+
+    return None
+
+
+# ----------------------------
+# CHAT ENDPOINT
+# ----------------------------
 
 @app.post("/chat")
 async def chat(data: dict):
 
+    user_message = data["messages"][-1]["content"]
+
+    # First: check if it's a system command
+    system_result = execute_system_action(user_message)
+
+    if system_result:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": system_result
+                    }
+                }
+            ]
+        }
+
+    # Otherwise send to AI model
     response = requests.post(
         LM_STUDIO_URL,
         json={
             "model": "google/gemma-3n-e4b",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                *data["messages"]
-            ],
-            "temperature": 0.3
+            "messages": data["messages"],
+            "temperature": 0.6
         }
     )
 
-    result = response.json()
-    reply = result["choices"][0]["message"]["content"]
-
-    # Clean formatting if model still adds markdown
-    clean_reply = reply.strip()
-
-    if clean_reply.startswith("```"):
-        clean_reply = clean_reply.replace("```json", "").replace("```", "").strip()
-
-    # Try parsing JSON action
-    try:
-        parsed = json.loads(clean_reply)
-
-        if "action" in parsed:
-
-            if parsed["action"] == "open_explorer":
-                subprocess.Popen("explorer")
-                return {"choices":[{"message":{"content":"Opening File Explorer."}}]}
-
-            elif parsed["action"] == "open_chrome":
-                subprocess.Popen("start chrome", shell=True)
-                return {"choices":[{"message":{"content":"Opening Chrome."}}]}
-
-            elif parsed["action"] == "open_vscode":
-                subprocess.Popen("code", shell=True)
-                return {"choices":[{"message":{"content":"Opening VS Code."}}]}
-
-    except:
-        pass
-
-    # If no action, return normal model reply
-    return result
+    return response.json()
